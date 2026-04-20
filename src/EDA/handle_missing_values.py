@@ -20,8 +20,8 @@ class DropMissingValuesStrategy(MissingValueStrategy):
         self.critical_columns = critical_columns
         logging.info(f'Dropping row with missing values in columns: {self.critical_columns}')
 
-    def handle(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
-        df_cleaned = df.dropna(subset=[self.critical_columns])
+    def handle(self, df: pd.DataFrame) -> pd.DataFrame:
+        df_cleaned = df.dropna(subset=self.critical_columns)
         n_dropped = len(df) - len(df_cleaned)
         logging.info(f'Dropped {n_dropped} rows with missing values in columns: {self.critical_columns}')
         return df_cleaned
@@ -36,8 +36,8 @@ class GenderPredication(BaseModel):
     pred_gender: Gender
 
 class GenderImputer:
-    def __init__(self, model_path: str):
-       self.groq_cleint = groq.Groq()
+    def __init__(self):
+       self.groq_client = groq.Groq()
 
     def _predict_gender(self, firstname: str, lastname: str) -> pd.DataFrame:
        
@@ -47,7 +47,7 @@ class GenderImputer:
         
         Your repsonse only consisit of one word : Male or Female
         """
-        repsonse = groq.chat.completions.create(
+        repsonse = self.groq_client.chat.completions.create(
                         model = "llama-3.3-70b-versatile",
                         messages = [{
                             "role": "user",
@@ -59,7 +59,7 @@ class GenderImputer:
         logging.info(f'Predicted gender for {firstname} {lastname}: {response}')
         return pridection.pred_gender
 
-    def impute(self,df):
+    def impute(self,df_impute):
         missing_gender_index = df_impute['Gender'].isnull()
 
         for index in df_impute[missing_gender_index].index:

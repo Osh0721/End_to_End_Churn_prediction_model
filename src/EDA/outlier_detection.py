@@ -33,11 +33,11 @@ class OutlierDetector:
     def __init__(self, strategy: OutlierDetectionStrategy):
         self.strategy = strategy
 
-    def detect(self, df: pd.DataFrame, selected_columns: list) -> pd.DataFrame:
-        return self.strategy.detect_outliers(df, selected_columns)
+    def detect_outlier(self, df: pd.DataFrame, columns: list) -> pd.DataFrame:
+        return self.strategy.detect_outliers(df, columns)
 
-    def handle_outliers(self, df, selected_columns, method: str = 'remove') -> pd.DataFrame:
-        outliers = self.detect(df, selected_columns)
+    def handle_outliers(self, df, columns, method: str = 'remove') -> pd.DataFrame:
+        outliers = self.detect_outlier(df, columns)
         outlier_count = outliers.sum(axis=1)
         rows_to_remove = outlier_count >= 2
         return df[~rows_to_remove]

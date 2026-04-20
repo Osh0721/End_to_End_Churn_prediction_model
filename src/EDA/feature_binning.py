@@ -9,8 +9,8 @@ class FeatureBinningStrategy(ABC):
         pass    
 
 class CustomBinningStrategy(FeatureBinningStrategy):
-    def __init__(self, bins_definitions: dict):
-        self.bins = bins_definitions.get('bins')
+    def __init__(self, bins_definitions):
+        self.bins_definitions = bins_definitions
 
     def bin_feature(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
 
@@ -22,7 +22,7 @@ class CustomBinningStrategy(FeatureBinningStrategy):
 
             return 'Invalid'
 
-        df[column + '_binned'] = df[column].apply(assign_bin)
+        df[column + 'Bins'] = df[column].apply(assign_bin)
         del df[column]
-        logging.info(f'Binned column: {column} into {len(self.bins)} bins')
+        logging.info(f'Binned column: {column} into {len(self.bins_definitions)} bins')
         return df

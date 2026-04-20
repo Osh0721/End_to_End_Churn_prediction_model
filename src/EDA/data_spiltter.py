@@ -26,7 +26,7 @@ class SimpleDataSplittingStrategy(DaraSplittingStrategy):
 
     def split_data(self, df: pd.DataFrame, target_column: str, test_size: float, random_state: int):
         X = df.drop(columns=[target_column])
-        y = df[target_column].values
+        y = df[target_column]
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=self.test_size, random_state=random_state)
         logging.info(f"Performed simple data splitting with test size {self.test_size} and random state {random_state}.")
         return X_train, X_test, y_train, y_test

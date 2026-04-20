@@ -19,7 +19,7 @@ class ScalingMethod(str, Enum):
     STANDARD = "standard"
 
 class MinMaxScalingStrategy(FeatureScalingStrategy):
-    def __int__(self):
+    def __init__(self):
         self.scaler= MinMaxScaler()
         self.fitted=False
     
