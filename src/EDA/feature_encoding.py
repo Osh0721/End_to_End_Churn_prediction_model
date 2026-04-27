@@ -1,53 +1,201 @@
+"""
+Feature encoding strategies for PySpark DataFrames.
+Supports nominal encoding (StringIndexer, OneHotEncoder) and ordinal encoding.
+"""
+
 import logging
-import pandas as pd
-from enum import Enum
-from dotenv import load_dotenv
-from pydantic import BaseModel, Field
-from abc import ABC, abstractmethod
-import groq
 import os
 import json
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from enum import Enum
+from typing import Dict, List, Optional
+from abc import ABC, abstractmethod
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, IndexToString
+from pyspark.ml import Pipeline
+from Spark.spark_session import get_or_create_spark_session
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 class FeatureEncodingStrategy(ABC):
+    """Abstract base class for feature encoding strategies."""
+    
+    def __init__(self, spark: Optional[SparkSession] = None):
+        """Initialize with SparkSession."""
+        self.spark = spark or get_or_create_spark_session()
+    
     @abstractmethod
-    def encode(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
+    def encode(self, df: DataFrame) -> DataFrame:
+        """
+        Encode features in the DataFrame.
+        
+        Args:
+            df: PySpark DataFrame
+            
+        Returns:
+            DataFrame with encoded features
+        """
         pass
 
+
 class VariableType(str, Enum):
-    NORMINAL = "norminal"
-    ORDINAL = "ordinal"
+    """Enumeration of variable types."""
+    NOMINAL = 'nominal'
+    ORDINAL = 'ordinal'
+
 
 class NominalEncodingStrategy(FeatureEncodingStrategy):
-    def __init__(self, nomnal_columns: list):
-        self.nomnal_columns = nomnal_columns
-        self.encoder_dict = {}
+    """
+    Nominal encoding strategy using StringIndexer followed by OneHotEncoder.
+    Creates one-hot encoded binary columns for categorical values.
+    """
+    
+    def __init__(self, nominal_columns: List[str], one_hot: bool = True, spark: Optional[SparkSession] = None):
+        """
+        Initialize nominal encoding strategy.
+        
+        Args:
+            nominal_columns: List of column names to encode
+            one_hot: Whether to apply one-hot encoding after indexing (default: True)
+            spark: Optional SparkSession
+        """
+        super().__init__(spark)
+        self.nominal_columns = nominal_columns
+        self.one_hot = one_hot
+        self.encoder_dicts = {}
+        self.indexers = {}
+        self.encoders = {}
+        self.pipeline_model = None
         os.makedirs('artifacts/encode', exist_ok=True)
+        logger.info(f"NominalEncodingStrategy initialized for ONE-HOT encoding: {nominal_columns}")
+        logger.info(f"One-hot encoding: {one_hot}")
+    
+    def encode(self, df: DataFrame) -> DataFrame:
+        """
+        Apply one-hot encoding to specified columns.
+        
+        Args:
+            df: PySpark DataFrame
+            
+        Returns:
+            DataFrame with one-hot encoded columns
+        """
+        logger.info("ONE-HOT ENCODING (NOMINAL)")
+        df_encoded = df
+        
+        # Build pipeline stages
+        stages = []
+        
+        for column in self.nominal_columns:
+            # String indexer stage
+            indexer = StringIndexer(
+                inputCol=column,
+                outputCol=f"{column}_index",
+                handleInvalid="keep"
+            )
+            
+            # One-hot encoder stage
+            encoder = OneHotEncoder(
+                inputCol=f"{column}_index",
+                outputCol=f"{column}_encoded",
+                dropLast=False  # Keep all categories for consistency
+            )
+            
+            stages.extend([indexer, encoder])
+        
+        # Create and fit pipeline
+        pipeline = Pipeline(stages=stages)
+        self.pipeline_model = pipeline.fit(df_encoded)
+        
+        # Transform data
+        df_encoded = self.pipeline_model.transform(df_encoded)
+        
+        # Save encoder mappings for inference
+        for i, column in enumerate(self.nominal_columns):
+            # Get StringIndexer model from pipeline
+            indexer_model = self.pipeline_model.stages[i * 2]
+            self.indexers[column] = indexer_model
+            
+            # Get labels (categories)
+            labels = indexer_model.labels
+            
+            # Create encoder dictionary for pandas compatibility
+            encoder_dict = {label: idx for idx, label in enumerate(labels)}
+            self.encoder_dicts[column] = encoder_dict
+            
+            # Save encoder mapping to JSON for inference
+            encoder_path = os.path.join('artifacts/encode', f"{column}_encoder.json")
+            with open(encoder_path, "w") as f:
+                json.dump({
+                    'categories': list(labels),
+                    'encoding_type': 'one_hot',
+                    'mappings': encoder_dict
+                }, f, indent=2)
+            
+            logger.info(f"✓ One-hot encoded '{column}': {len(labels)} categories → {len(labels)} binary columns")
+            
+            # Extract one-hot encoded values to separate columns
+            # This makes the data compatible with pandas/sklearn models
+            for idx, label in enumerate(labels):
+                new_col_name = f"{column}_{label}"
+                # Extract the idx-th element from the sparse vector
+                df_encoded = df_encoded.withColumn(
+                    new_col_name,
+                    F.when(F.col(f"{column}_index") == idx, 1).otherwise(0)
+                )
+            
+            # Drop original column, index column, and encoded vector column
+            df_encoded = df_encoded.drop(column, f"{column}_index", f"{column}_encoded")
+        
+        logger.info("✓ One-hot encoding completed")
+        return df_encoded
 
-    def encode(self, df,encoder_path = os.path.join('artifacts/encode')) -> pd.DataFrame:
-        for column in self.nomnal_columns:
-            unique_values = df[column].unique()
-            encoder_dict = {value: idx for idx, value in enumerate(unique_values)}
-            self.encoder_dict[column] = encoder_dict
+    def get_encoder_dicts(self) -> Dict[str, Dict[str, int]]:
+        """Get the encoder dictionaries for all columns."""
+        return self.encoder_dicts
+    
+    def get_indexers(self) -> Dict[str, StringIndexer]:
+        """Get the fitted StringIndexer models."""
+        return self.indexers
 
-            encoder_path = os.path.join('artifacts/encode',f"{column}_encoder.json")
-            with open(encoder_path, 'w') as f:
-                json.dump(encoder_dict, f)  
-            df[column] = df[column].map(encoder_dict)
-           
-        return df
-
-    def get_encoder_dict(self):
-        return self.encoder_dict
 
 class OrdinalEncodingStrategy(FeatureEncodingStrategy):
-    def __init__(self, ordinal_mappings: list):
-        self.ordinal_mappings = ordinal_mappings
+    """
+    Ordinal encoding strategy with custom ordering.
+    Maps categorical values to ordered numeric values.
+    """
+    
+    def __init__(self, ordinal_mappings: Dict[str, Dict[str, int]], spark: Optional[SparkSession] = None):
+        """
+        Initialize ordinal encoding strategy.
         
+        Args:
+            ordinal_mappings: Dictionary mapping column names to value->order mappings
+            spark: Optional SparkSession
+        """
+        super().__init__(spark)
+        self.ordinal_mappings = ordinal_mappings
+        logger.info(f"OrdinalEncodingStrategy initialized for columns: {list(ordinal_mappings.keys())}")
+    
+    def encode(self, df: DataFrame) -> DataFrame:
+        """
+        Apply ordinal encoding to specified columns.
+        
+        Args:
+            df: PySpark DataFrame
+            
+        Returns:
+            DataFrame with encoded columns
+        """
+        df_encoded = df
 
-    def encode(self, df) :
         for column, mapping in self.ordinal_mappings.items():
-            df[column] = df[column].map(mapping)
-            logging.info(f"Encoded column '{column}' using ordinal encoding with mapping: {mapping}")   
-           
-        return df
+            mapping_expr = F.when(F.col(column).isNull(), None)
+            for value, code in mapping.items():
+                mapping_expr = mapping_expr.when(F.col(column) == value, code)
+
+            df_encoded = df_encoded.withColumn(column, mapping_expr)
+
+        return df_encoded

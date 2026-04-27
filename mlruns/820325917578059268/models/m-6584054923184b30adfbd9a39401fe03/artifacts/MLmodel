@@ -1,0 +1,23 @@
+artifact_path: file:///Users/oshanrathnayaka/Oshan's Personal/End-to-End ML system/Week5_6/End_to_End_Churn_prediction_model/mlruns/820325917578059268/models/m-6584054923184b30adfbd9a39401fe03/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.14.2
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.8.0
+    skops_trusted_types: null
+mlflow_version: 3.11.1
+model_id: m-6584054923184b30adfbd9a39401fe03
+model_size_bytes: 861302
+model_uuid: m-6584054923184b30adfbd9a39401fe03
+prompts: null
+run_id: 096104d174da4c5abd5cdaa25f646fef
+utc_time_created: '2026-04-20 12:25:56.802108'

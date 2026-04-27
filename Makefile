@@ -93,3 +93,4 @@ stop-all:
 	@-ps aux | grep '[m]lflow ui' | awk '{print $$2}' | xargs kill -9 2>/dev/null || true
 	@-ps aux | grep '[g]unicorn.*mlflow' | awk '{print $$2}' | xargs kill -9 2>/dev/null || true
 	@echo "✅ All MLflow servers have been stopped"
+
